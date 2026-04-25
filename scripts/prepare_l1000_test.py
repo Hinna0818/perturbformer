@@ -27,8 +27,8 @@ gene_file = os.path.join(
     "GSE70138_Broad_LINCS_gene_info_2017-03-06.txt.gz"
 )
 
-# 测试阶段先读 1000 条 signature
-N_TEST = 1000
+# 测试阶段先读 5000 条 signature
+N_TEST = 5000
 
 print("=" * 80)
 print("Input files")

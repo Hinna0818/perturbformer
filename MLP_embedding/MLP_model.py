@@ -14,20 +14,23 @@ from scipy.stats import pearsonr, spearmanr
 ## 1. settings
 BASE_DIR = "/biostack/home/henan/perturb-seq"
 
-META_FILE = os.path.join(BASE_DIR, "processed", "meta_l1000_test_1000.tsv")
-Y_FILE = os.path.join(BASE_DIR, "processed", "Y_l1000_test_1000_landmark.tsv")
+META_FILE = os.path.join(BASE_DIR, "processed", "meta_l1000_test_5000.tsv")
+Y_FILE = os.path.join(BASE_DIR, "processed", "Y_l1000_test_5000_landmark.tsv")
 
 MODEL_DIR = os.path.join(BASE_DIR, "MLP_embedding")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 SEED = 42
 BATCH_SIZE = 64
-EPOCHS = 50
+EPOCHS = 200
 LR = 1e-3
 
 DRUG_EMB_DIM = 128
 CELL_EMB_DIM = 32
 HIDDEN_DIM = 512
+
+PATIENCE = 10
+MIN_DELTA = 1e-4
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -151,20 +154,24 @@ class L1000Dataset(Dataset):
 
 dataset = L1000Dataset(drug_idx, cell_idx, numeric, Y_np)
 n_total = len(dataset)
-n_train = int(n_total * 0.8)
-n_valid = n_total - n_train
 
-train_ds, valid_ds = random_split(
+n_train = int(n_total * 0.7)
+n_valid = int(n_total * 0.15)
+n_test = n_total - n_train - n_valid
+
+train_ds, valid_ds, test_ds = random_split(
     dataset,
-    [n_train, n_valid],
+    [n_train, n_valid, n_test],
     generator=torch.Generator().manual_seed(SEED)
 )
 
 train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
 valid_loader = DataLoader(valid_ds, batch_size=BATCH_SIZE, shuffle=False)
+test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False)
 
 print("train samples:", len(train_ds))
 print("valid samples:", len(valid_ds))
+print("test samples :", len(test_ds))
 
 ## 8. Model
 class MLPEmbeddingModel(nn.Module):
@@ -290,6 +297,9 @@ def evaluate_model(model, loader):
 
 ## 12. train
 best_valid_loss = float("inf")
+best_epoch = 0
+epochs_no_improve = 0
+
 best_model_path = os.path.join(MODEL_DIR, "mlp_embedding_best.pt")
 
 for epoch in range(1, EPOCHS + 1):
@@ -326,8 +336,11 @@ for epoch in range(1, EPOCHS + 1):
         f"Spearman: {valid_metrics['spearman']:.4f}"
     )
 
-    if valid_metrics["loss"] < best_valid_loss:
+    # 判断 valid loss 是否有明显改善
+    if valid_metrics["loss"] < best_valid_loss - MIN_DELTA:
         best_valid_loss = valid_metrics["loss"]
+        best_epoch = epoch
+        epochs_no_improve = 0
 
         save_obj = {
             "model_state_dict": model.state_dict(),
@@ -349,10 +362,45 @@ for epoch in range(1, EPOCHS + 1):
         torch.save(save_obj, best_model_path)
         print(f"Saved best model to: {best_model_path}")
 
+    else:
+        epochs_no_improve += 1
+        print(f"No improvement for {epochs_no_improve}/{PATIENCE} epochs.")
+
+    # Early stopping
+    if epochs_no_improve >= PATIENCE:
+        print("=" * 80)
+        print(f"Early stopping triggered at epoch {epoch}.")
+        print(f"Best epoch: {best_epoch}")
+        print(f"Best valid loss: {best_valid_loss:.4f}")
+        print("=" * 80)
+        break
+
 print("=" * 80)
 print("Training finished.")
+print("Best epoch:", best_epoch)
 print("Best valid loss:", best_valid_loss)
 print("Best model:", best_model_path)
+print("=" * 80)
+
+## 13. test
+print("=" * 80)
+print("Evaluating best model on test set...")
+print("=" * 80)
+
+checkpoint = torch.load(best_model_path, map_location=device)
+model.load_state_dict(checkpoint["model_state_dict"])
+
+test_metrics = evaluate_model(model, test_loader)
+
+print(
+    f"Test Loss: {test_metrics['loss']:.4f} | "
+    f"Test RMSE: {test_metrics['rmse']:.4f} | "
+    f"Test Pearson: {test_metrics['pearson']:.4f} | "
+    f"Test Spearman: {test_metrics['spearman']:.4f}"
+)
+
+print("=" * 80)
+print("Final test evaluation finished.")
 print("=" * 80)
 
 
