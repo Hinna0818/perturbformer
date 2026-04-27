@@ -1,4 +1,4 @@
-## Perturbformer-V4: Drug_SMILES_Embedding + conditional VAE model
+## Perturbformer-V4: Drug_SMILES_Embedding + simple VAE model
 import os
 import re
 import random
