@@ -25,7 +25,7 @@ PERT_FILE = os.path.join(
     "GSE70138_Broad_LINCS_pert_info.txt.gz"
 )
 
-MODEL_DIR = os.path.join(BASE_DIR, "latent")
+MODEL_DIR = os.path.join(BASE_DIR, "VAE")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 SEED = 42
